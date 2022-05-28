@@ -51,8 +51,10 @@ char* intr_name[IDT_DESC_CNT];		      // 用于保存异常的名字
 intr_handler idt_table[IDT_DESC_CNT];	  // 定义中断处理程序数组.在kernel.S中定义的intrXXentry只是中断处理程序的入口,最终调用的是ide_table中的处理程序
 //			 ^~~~~~~~~~~~~~~~~~~~~~~
 extern intr_handler intr_entry_table[IDT_DESC_CNT];	    // ###声明引用定义在kernel.S中的中断处理函数入口数组
-/*	###intr_handler的類型為void*，定義在interrupt.h，
-	###void* 表示此類型是一個指標，指向任何類型皆可。	*/
+/*	###intr_handler為void*，定義在interrupt.h，
+	###void* 表示此類型是一個指標，指向任何類型皆可，
+	###intr_entry_table已經定義在kernel.S中，但未定義型別，
+	###所以在此用extern把intr_entry_table引用出來定義型別為intr_handler。	*/
 
 /*
 #################################################################

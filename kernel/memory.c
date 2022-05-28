@@ -241,16 +241,17 @@ void* get_user_pages(uint32_t pg_cnt) {
    return vaddr;
 }
 
-/* 将地址vaddr与pf池中的物理地址关联,仅支持一页空间分配 */
+//~~~~~~~~~~~~~~~~~~~~~~~~第15章g~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/* 将地址vaddr与pf池中的物理地址关联,仅支持一页空间分配
 void* get_a_page(enum pool_flags pf, uint32_t vaddr) {
    struct pool* mem_pool = pf & PF_KERNEL ? &kernel_pool : &user_pool;
    lock_acquire(&mem_pool->lock);
 
-   /* 先将虚拟地址对应的位图置1 */
+   先将虚拟地址对应的位图置1
    struct task_struct* cur = running_thread();
    int32_t bit_idx = -1;
 
-/* 若当前是用户进程申请用户内存,就修改用户进程自己的虚拟地址位图 */
+   若当前是用户进程申请用户内存,就修改用户进程自己的虚拟地址位图
    if (cur->pgdir != NULL && pf == PF_USER) {
       bit_idx = (vaddr - cur->userprog_vaddr.vaddr_start) / PG_SIZE;
       ASSERT(bit_idx > 0);
@@ -258,7 +259,7 @@ void* get_a_page(enum pool_flags pf, uint32_t vaddr) {
 
    } 
    else if (cur->pgdir == NULL && pf == PF_KERNEL){
-/* 如果是内核线程申请内核内存,就修改kernel_vaddr. */
+   如果是内核线程申请内核内存,就修改kernel_vaddr.
       bit_idx = (vaddr - kernel_vaddr.vaddr_start) / PG_SIZE;
       ASSERT(bit_idx > 0);
       bitmap_set(&kernel_vaddr.vaddr_bitmap, bit_idx, 1);
@@ -275,6 +276,51 @@ void* get_a_page(enum pool_flags pf, uint32_t vaddr) {
    lock_release(&mem_pool->lock);
    return (void*)vaddr;
 }
+*/
+
+void* get_a_page(enum pool_flags pf, uint32_t vaddr) {
+   struct pool* mem_pool = pf & PF_KERNEL ? &kernel_pool : &user_pool;
+   lock_acquire(&mem_pool->lock);
+
+   /* 先将虚拟地址对应的位图置1 */
+   struct task_struct* cur = running_thread();
+   int32_t bit_idx = -1;
+
+/* 若当前是用户进程申请用户内存,就修改用户进程自己的虚拟地址位图 */
+   if (cur->pgdir != NULL && pf == PF_USER && vaddr < 0x8048000) {
+      bit_idx = vaddr / PG_SIZE;
+      ASSERT(bit_idx >= 0);//<===============
+      bitmap_set(&cur->userprog_vaddr.vaddr_bitmap, bit_idx, 1);
+   } else if (cur->pgdir != NULL && pf == PF_USER) {
+      bit_idx = (vaddr - cur->userprog_vaddr.vaddr_start) / PG_SIZE;
+      ASSERT(bit_idx >= 0);//<===============
+      bitmap_set(&cur->userprog_vaddr.vaddr_bitmap, bit_idx, 1);
+   } else if (cur->pgdir == NULL && pf == PF_KERNEL){
+/* 如果是内核线程申请内核内存,就修改kernel_vaddr. */
+      bit_idx = (vaddr - kernel_vaddr.vaddr_start) / PG_SIZE;
+      ASSERT(bit_idx >= 0);//<===============
+      bitmap_set(&kernel_vaddr.vaddr_bitmap, bit_idx, 1);
+   } else {
+      PANIC("get_a_page:not allow kernel alloc userspace or user alloc kernelspace by get_a_page");
+   }
+
+   void* page_phyaddr = palloc(mem_pool);
+   if (page_phyaddr == NULL) {
+      lock_release(&mem_pool->lock);
+      return NULL;
+   }
+   page_table_add((void*)vaddr, page_phyaddr);
+   lock_release(&mem_pool->lock);
+   return (void*)vaddr;
+}
+	/*
+	#本get_a_page需要大改!!!
+	#使用者處理程序用的堆疊會放在0x8004800處以上的位置，
+	#而app的code會放置在低於0x8004800處，
+	#所以多新增可以處理 低於0x8004800處的 if (cur->pgdir != NULL && pf == PF_USER && vaddr < 0x8048000)
+	#此外，bit_idx應該是從0開始算，所以三個ASSERT改成SSERT(bit_idx >= 0)。
+	*/
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 //~~~~~~~~~~~~~~~~~~~~~~~~第15章a~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 /* 安装1页大小的vaddr,专门针对fork时虚拟地址位图无须操作的情况 */
@@ -697,6 +743,17 @@ void* sys_malloc(uint32_t size) {
     * 就创建新的arena提供mem_block */
       if (list_empty(&descs[desc_idx].free_list)) {
 		a = malloc_page(PF, 1);       // 分配1页框做为arena
+		
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~第15章g~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~	
+		struct task_struct* cur_thread = running_thread();//<=================================
+		page_dir_activate(cur_thread);                    //<=================================
+		/*
+		####bochs會出現bug!!!
+		####不知為何，bochs會誤讀分頁表，把虛擬地址誤映射到物理位址
+		####也不知為何原因，重新載入cr3可以消除此bug!!!
+		*/
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		
 		if (a == NULL) {
 			lock_release(&mem_pool->lock);
 			return NULL;
@@ -963,6 +1020,9 @@ void mem_init() {
 
 /*
 ###需要注意:
-###當使用者系統呼叫了以後，會從TSS拿核心態的esp，
-###因此running_thread函數傳回來的就會是使用者的task_struct的基底位址。
+### 當使用者系統呼叫了以後，會從TSS拿核心態的esp，
+### 因此running_thread函數傳回來的就會是使用者的task_struct的基底位址。
+###
+### 在第15章g修改了一些memory.c內的sys_malloc避掉bochs虛擬位址映射到實體位址的bug，
+### 同時把作者寫的get_a_page函數內的ASSERT(bit_idx > 0)修改成ASSERT(bit_idx > 0)。
 */

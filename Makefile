@@ -8,7 +8,7 @@ LIB = -I lib/ -I lib/kernel/ -I lib/user/ -I kernel/ -I device/ -I thread/ -I us
 ASFLAGS = -f elf 
 ASBINLIB = -I boot/include/
 CFLAGS = -m32 -Wall $(LIB) -c -fno-builtin -W -Wstrict-prototypes \
-         -Wmissing-prototypes -fno-stack-protector
+         -Wmissing-prototypes -Wsystem-headers -fno-stack-protector
 		###-32代表編譯在64位元平台上編譯32位元的程序
 		###-Wall表示顯示所有警告
 		###-c代表只編譯不連結
@@ -16,6 +16,8 @@ CFLAGS = -m32 -Wall $(LIB) -c -fno-builtin -W -Wstrict-prototypes \
 		###-W表示顯示編譯器認為會出現錯誤的警告	
 		###-Wstrict-prototypes為要求函數宣告必須要有參數類型，否則發出警告
 		###-Wmissing-prototypes為要求函數必須要有宣告，否則發出警告
+		###-Wsystem-headers為顯示在系統頭文件中發出的警告
+		###可參考https://stackoverflow.com/questions/35607593/exact-meaning-of-system-headers-for-the-gcc-mm-flag
 		###在Ubuntu，gcc不加-fno-stack-protector連結器會出現錯誤
 LDFLAGS = -melf_i386 -Ttext $(ENTRY_POINT) -e main -Map $(BUILD_DIR)/kernel.map
 OBJS = $(BUILD_DIR)/main.o $(BUILD_DIR)/init.o $(BUILD_DIR)/interrupt.o \
@@ -27,7 +29,13 @@ OBJS = $(BUILD_DIR)/main.o $(BUILD_DIR)/init.o $(BUILD_DIR)/interrupt.o \
 	$(BUILD_DIR)/process.o $(BUILD_DIR)/syscall.o $(BUILD_DIR)/syscall-init.o \
 	$(BUILD_DIR)/stdio.o $(BUILD_DIR)/ide.o $(BUILD_DIR)/stdio-kernel.o $(BUILD_DIR)/fs.o \
 	$(BUILD_DIR)/inode.o $(BUILD_DIR)/file.o $(BUILD_DIR)/dir.o  $(BUILD_DIR)/fork.o \
-	$(BUILD_DIR)/shell.o $(BUILD_DIR)/assert.o $(BUILD_DIR)/buildin_cmd.o
+	$(BUILD_DIR)/shell.o $(BUILD_DIR)/assert.o $(BUILD_DIR)/buildin_cmd.o \
+	$(BUILD_DIR)/exec.o
+		###-melf_i386代表在64位元平台上連結32位元的程序
+		###-Ttext 0xc0001500 表示把程式真正執行的起始地址訂為0xc0001500
+		###-e main表示把入口符號訂為main，若未輸入此內容，連結器會默認把_start視為入口的符號
+		###然後因為在main.c內找不到入口符號而發出警告，所以要加上-e main把入口符號訂為main
+		###-Map ./build/kernel.map表示產生map檔，產生在./build/kernel.map，map檔內記載了所連結程式的重要資訊
 
 ##############     MBR代码编译     ############### 
 $(BUILD_DIR)/mbr.bin: boot/mbr.S 
@@ -145,53 +153,58 @@ $(BUILD_DIR)/fs.o: fs/fs.c fs/fs.h lib/stdint.h device/ide.h thread/sync.h lib/k
 		$(CC) $(CFLAGS) $< -o $@
 		
 $(BUILD_DIR)/inode.o: fs/inode.c fs/inode.h lib/stdint.h lib/kernel/list.h \
-	kernel/global.h fs/fs.h device/ide.h thread/sync.h thread/thread.h \
-	lib/kernel/bitmap.h kernel/memory.h fs/file.h kernel/debug.h \
-	kernel/interrupt.h lib/kernel/stdio-kernel.h
-	$(CC) $(CFLAGS) $< -o $@
+		kernel/global.h fs/fs.h device/ide.h thread/sync.h thread/thread.h \
+		lib/kernel/bitmap.h kernel/memory.h fs/file.h kernel/debug.h \
+		kernel/interrupt.h lib/kernel/stdio-kernel.h
+		$(CC) $(CFLAGS) $< -o $@
 
 $(BUILD_DIR)/file.o: fs/file.c fs/file.h lib/stdint.h device/ide.h thread/sync.h \
-	lib/kernel/list.h kernel/global.h thread/thread.h lib/kernel/bitmap.h \
-	kernel/memory.h fs/fs.h fs/inode.h fs/dir.h lib/kernel/stdio-kernel.h \
-	kernel/debug.h kernel/interrupt.h
-	$(CC) $(CFLAGS) $< -o $@
+		lib/kernel/list.h kernel/global.h thread/thread.h lib/kernel/bitmap.h \
+		kernel/memory.h fs/fs.h fs/inode.h fs/dir.h lib/kernel/stdio-kernel.h \
+		kernel/debug.h kernel/interrupt.h
+		$(CC) $(CFLAGS) $< -o $@
 
 $(BUILD_DIR)/dir.o: fs/dir.c fs/dir.h lib/stdint.h fs/inode.h lib/kernel/list.h \
-	kernel/global.h device/ide.h thread/sync.h thread/thread.h \
-	lib/kernel/bitmap.h kernel/memory.h fs/fs.h fs/file.h \
-	lib/kernel/stdio-kernel.h kernel/debug.h kernel/interrupt.h
-	$(CC) $(CFLAGS) $< -o $@
+		kernel/global.h device/ide.h thread/sync.h thread/thread.h \
+		lib/kernel/bitmap.h kernel/memory.h fs/fs.h fs/file.h \
+		lib/kernel/stdio-kernel.h kernel/debug.h kernel/interrupt.h
+		$(CC) $(CFLAGS) $< -o $@
 
 $(BUILD_DIR)/fork.o: userprog/fork.c userprog/fork.h thread/thread.h lib/stdint.h \
-	lib/kernel/list.h kernel/global.h lib/kernel/bitmap.h kernel/memory.h \
-	userprog/process.h kernel/interrupt.h kernel/debug.h \
-	lib/kernel/stdio-kernel.h
-	$(CC) $(CFLAGS) $< -o $@
+		lib/kernel/list.h kernel/global.h lib/kernel/bitmap.h kernel/memory.h \
+		userprog/process.h kernel/interrupt.h kernel/debug.h \
+		lib/kernel/stdio-kernel.h
+		$(CC) $(CFLAGS) $< -o $@
 
 $(BUILD_DIR)/shell.o: shell/shell.c shell/shell.h lib/stdint.h fs/fs.h \
-	lib/user/syscall.h lib/stdio.h lib/stdint.h kernel/global.h lib/user/assert.h
-	$(CC) $(CFLAGS) $< -o $@
+		lib/user/syscall.h lib/stdio.h lib/stdint.h kernel/global.h lib/user/assert.h
+		$(CC) $(CFLAGS) $< -o $@
 
 $(BUILD_DIR)/assert.o: lib/user/assert.c lib/user/assert.h lib/stdio.h lib/stdint.h
-	$(CC) $(CFLAGS) $< -o $@
+		$(CC) $(CFLAGS) $< -o $@
 	
 $(BUILD_DIR)/buildin_cmd.o: shell/buildin_cmd.c shell/buildin_cmd.h lib/stdint.h \
-	lib/user/syscall.h lib/stdio.h lib/stdint.h lib/string.h fs/fs.h
-	$(CC) $(CFLAGS) $< -o $@
+		lib/user/syscall.h lib/stdio.h lib/stdint.h lib/string.h fs/fs.h
+		$(CC) $(CFLAGS) $< -o $@
+		
+$(BUILD_DIR)/exec.o: userprog/exec.c userprog/exec.h thread/thread.h lib/stdint.h \
+		lib/kernel/list.h kernel/global.h lib/kernel/bitmap.h kernel/memory.h \
+		lib/kernel/stdio-kernel.h fs/fs.h lib/string.h lib/stdint.h
+		$(CC) $(CFLAGS) $< -o $@
 
 ##############    汇编代码编译    ###############
 $(BUILD_DIR)/kernel.o: kernel/kernel.S
-	$(AS) $(ASFLAGS) $< -o $@
+		$(AS) $(ASFLAGS) $< -o $@
 	
 $(BUILD_DIR)/print.o: lib/kernel/print.S
-	$(AS) $(ASFLAGS) $< -o $@
+		$(AS) $(ASFLAGS) $< -o $@
 	
 $(BUILD_DIR)/switch.o: thread/switch.S
 		$(AS) $(ASFLAGS) $< -o $@
 
 ##############    链接所有目标文件    #############
 $(BUILD_DIR)/kernel.bin: $(OBJS)
-	$(LD) $(LDFLAGS) $^ -o $@
+		$(LD) $(LDFLAGS) $^ -o $@
 	###$^為所有依賴檔案
 
 
@@ -212,6 +225,21 @@ hd:
 	dd if=$(BUILD_DIR)/kernel.bin \
            of=hd3M.img \
            bs=512 count=200 seek=9 conv=notrunc
+		###dd的意思為Data Description，中文意思為 資料描述
+		###bs的意思為bytes，用來指定塊的大小
+		###
+		###conv代表資料轉換的方式，
+		###轉換選項notrunc意味著不截短輸出檔案，
+		###也就是說，如果輸出檔案已經存在，只改變指定的位元組，然後登出，並保留輸出檔案的剩餘部分。
+		###沒有這個選項，dd將建立一個count位元組長的檔案(img檔)，
+		###
+		###不截短的意思是如果已經有一個輸出檔案，其大小是3MB，而資料只有count位元組長，
+		###就直接把資料寫進3MB的檔案內，使輸出檔案大小仍然保持3MB，
+		###而不會額外寫進另一個新創的輸出檔案內，其大小只有count位元組長(從3M Bytes截成count Bytes)，
+		###
+		###因為我們已經有名為hd3M.img的輸出檔案了，所以在此加入conv=notrunc
+		###
+		###以上參考:https://zh.wikipedia.org/wiki/Dd_(Unix)
 
 clean:
 	cd $(BUILD_DIR) && rm -f ./*
